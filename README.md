@@ -1,88 +1,113 @@
-# Design-Pattern-detection
+# Design Pattern Detection
 
-This application identifies design pattern instances from a given dataset. Currently, the code is compatible with Python 2.7
+This project is an implementation and replication of the paper "Feature-based software design pattern detection".
 
-#### Note: The files below require the matplotlib package for plotting and readable output
+There are two main ways to run this project:
+1.  **Quick Test Mode:** Uses a random sample of Java projects and auto-generated "dummy" labels to quickly verify that the entire code pipeline works.
+2.  **Paper Replication Mode:** Uses the expert-labeled `input-1300.csv` file provided by the authors to replicate the paper's original experiment.
 
-## Data Source
-- [Java file Corpus](http://groups.inf.ed.ac.uk/cup/javaGithub/)
+## 1. Setup
 
+### 1.1 Installation
 
-## Dataset Generation
-The dataset used for the classification is generated in a series of steps. First, make_ngram.py is used to construct a Word2Vec model using a set of files (verbose files) containing class names and ngrams associated with the class. make_glove.py performs a similar task, but instead constructs a GloVe model given the verbose files. The word embedding model is used to construct a dataset by running make_class_features.py followed by 
+First, ensure you are inside the configured `devcontainer` or a local Python 2.7 environment.
 
-### detector.py
-
-Outputs `.verbose` files in the output directory taking `.java` files from input directory
-
-Usage:
-```python
-python detector.py --input ./input --output ./output --tasks all
-``` 
-
-### make_class_features.py
-
-Outputs vector representation Java classes from the ngram model in `dataset.csv` along with labels merged from `output-refined.csv`
-
-Usage:  
-```python
-python make_class_features.py [VERBOSE_ROOT]
+**Install all dependencies:**
+```sh
+pip install -r requirements.txt
 ```
 
-Arguments:  
-- VERBOSE_ROOT: root of the directory containing the verbose files. 
+**Make all shell scripts executable:**
+```sh
+chmod +x *.sh
+```
 
-NOTE: This script uses the Word2Vec implementation in the [Gensim package](https://github.com/RaRe-Technologies/gensim "Gensim Github Repo"). 
-And may need to install sudo apt-get install -y liblzma-dev to run it for linux machines.
+### 1.2 Manual Code Fix (Required)
 
+A manual code change is required in `call_graph.py` to make it compatible with the modern version of the `plyj` library, which is the only one available via pip.
 
-## Classification
-Classification is performed in the python files listed below. The file calls the dataset.csv file, which is used to train a machine learning model and generate predictions. 
+**File to modify:** `call_graph.py`
 
-Each script outputs 
-- confusion matrix csv and plot
-- Per class Precision, Recall barplots
-- report containing the precision, recall, and f-score values for the prediction.
+**Action:** Find the `function_handling` dictionary (around line 100) and comment out the lines for `m.ExpressionStatement`.
 
-
-### classifier.py
-Uses a various to classify the design patterns contained in the test files.  
-
-Usage:
 ```python
-python classifier.py [CLASSIFIERNAME]
-```  
+#            m.ExpressionStatement: \
+#                cls.expr_decl,
+```
 
-NOTE: Assumes the dataset is called 'dataset.csv'  
+#### Why is this necessary?
+The original code was written for an older, unavailable version of the `plyj` library that had a feature called `ExpressionStatement`. The current version does not, causing a crash. This fix tells the script to simply ignore this legacy feature.
 
-Arguments: 
+#### Does this change the final result?
+No, the impact is negligible.
 
-- CLASSIFIERNAME - Which Classification algorithm you want to use.
+**What Are We Actually Missing?**
 
-CLASSIFIERNAME supported are
-- RF: RandomForest
-- SVM: Support Vector Machine
-- ADABOOST: Adaboost
-- ADABOOST_LOGISTIC: Adaboost
-- LOGISTIC: Logistic Regression
-- GBTREE: GradientBoosted Tree
-- RIDGE: Ridge classifier
-- VOTER: Voting classifier composed of RF, SVM, ADABOOST
+By commenting out the line, we are only preventing the script from analyzing the simplest possible statements that aren't covered by other rules. The most common example is a simple increment or decrement:
+```java
+i++;
+count--;
+```
 
+**Why These Missing Parts Don't Matter for This Task**
 
-## Miscallenous Scripts [currently not used]
+The goal is to find high-level *design patterns*. A pattern like a **Singleton** is defined by having a private constructor and a static `getInstance()` method. A pattern like an **Observer** is defined by `register()` and `notify()` methods and the relationship between classes.
 
-### print_ngram_features.py
+Whether a method contains `i++;` has almost zero value in determining if it's part of a larger architectural pattern. It's just low-level implementation noise. The critical features for pattern detection are still captured correctly.
 
-Prints the vector representations of the ngrams in readable format.
+---
 
-Usage:  
-print_ngram_features.py [MODEL_JAVA_FILE] [MODEL_GLOVE_FILE] [OUTPUT_JAVA_FILE] [OUTPUT_GLOVE_FILE]
+## 2. Running the Experiments
 
-Arguments:  
-<li>MODEL_JAVA_FILE: file name of the ngram vector model  
-<li>MODEL_GLOVE_FILE: file name of the GloVe vector model  
-<li>OUTPUT_JAVA_FILE: text file to write the vector representations of the ngrams  
-<li>OUTPUT_GLOVE_FILE: text file to write the vector representations of GloVe
+### Option A: Quick Test (with Dummy Labels)
 
+This is the **fastest way to test the full pipeline**. The final accuracy will be low, which is expected because the labels are randomly generated.
 
+```sh
+# 1. Clean up previous runs
+rm -rf input/ output/ results/ p-mart-output-final.csv P-MARt-dataset.csv
+
+# 2. Setup: Download and extract 40 random Java projects into the input/ directory
+./setup_projects.sh
+
+# 3. Feature Extraction: Process the Java code and generate SSLR feature files
+python detector.py --input ./input --output ./output
+
+# 4. Label Generation: Create a balanced, random "dummy" label file for the projects
+./generate_balanced_labels.sh
+
+# 5. Model Building: Combine features and labels to create the final dataset
+python make_class_features.py ./output
+
+# 6. Run Classifier: Train the model and get the results
+mkdir -p results
+python classifier.py RF
+```
+
+### Option B: Paper Replication (with Author's Labels)
+
+This mode uses the authors' expert-labeled data. The final accuracy will be much higher and will closely resemble the results from the original paper.
+
+```sh
+# 1. Clean up previous runs
+rm -rf input/ output/ results/ p-mart-output-final.csv P-MARt-dataset.csv target_projects.txt
+
+# 2. Get Target Projects: Create a list of all projects mentioned in the author's label file
+cut -d',' -f1 input-1300.csv | sort -u > target_projects.txt
+
+# 3. Extract Projects: Extract only these specific projects from the 1.8GB archive
+./extract_target_projects.sh
+
+# 4. Use Author's Labels: Copy the author's label file to be used as our ground truth
+cp input-1300.csv p-mart-output-final.csv
+
+# 5. Feature Extraction: Process the Java code for the target projects
+python detector.py --input ./input --output ./output
+
+# 6. Model Building: Combine features and the ground truth labels
+python make_class_features.py ./output
+
+# 7. Run Classifier: Train the model and replicate the paper's experiment
+mkdir -p results
+python classifier.py RF
+```

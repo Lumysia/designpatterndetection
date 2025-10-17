@@ -151,8 +151,8 @@ class Node:
                 cls.const_invoc,
             m.InstanceCreation : \
                 cls.inst_invoc,
-            m.ExpressionStatement: \
-                cls.expr_decl,
+            #m.ExpressionStatement: \
+            #    cls.expr_decl,
             m.Assignment: \
                 cls.assign_decl,
             m.Return:
