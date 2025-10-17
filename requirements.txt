@@ -1,0 +1,8 @@
+pandas
+numpy
+scikit-learn
+plyj
+gensim
+matplotlib
+seaborn
+tqdm
